@@ -1,0 +1,6 @@
+{
+  "name": "ChronoCheckers: Magic & Time",
+  "description": "A twist on checkers with time-based cooldowns and a magic system for freezing pieces.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
