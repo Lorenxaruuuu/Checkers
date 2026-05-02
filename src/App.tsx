@@ -41,7 +41,24 @@ const INITIAL_PIECES: Piece[] = (() => {
   return pieces;
 })();
 
+const COLOR_OPTIONS = [
+  { id: 'cyan', name: 'Cyan', bg: 'bg-cyan-500', bgSubtle: 'bg-cyan-500/20', border: 'border-cyan-400', from: 'from-cyan-600', to: 'to-cyan-900', shadow: 'shadow-cyan-500/50', accent: 'text-cyan-400', glow: 'shadow-cyan-500/50' },
+  { id: 'amber', name: 'Amber', bg: 'bg-amber-500', bgSubtle: 'bg-amber-500/20', border: 'border-amber-400', from: 'from-amber-600', to: 'to-amber-900', shadow: 'shadow-amber-500/50', accent: 'text-amber-400', glow: 'shadow-amber-500/50' },
+  { id: 'rose', name: 'Rose', bg: 'bg-rose-500', bgSubtle: 'bg-rose-500/20', border: 'border-rose-400', from: 'from-rose-600', to: 'to-rose-900', shadow: 'shadow-rose-500/50', accent: 'text-rose-400', glow: 'shadow-rose-500/50' },
+  { id: 'emerald', name: 'Emerald', bg: 'bg-emerald-500', bgSubtle: 'bg-emerald-500/20', border: 'border-emerald-400', from: 'from-emerald-600', to: 'to-emerald-900', shadow: 'shadow-emerald-500/50', accent: 'text-emerald-400', glow: 'shadow-emerald-500/50' },
+  { id: 'purple', name: 'Purple', bg: 'bg-purple-500', bgSubtle: 'bg-purple-500/20', border: 'border-purple-400', from: 'from-purple-600', to: 'to-purple-900', shadow: 'shadow-purple-500/50', accent: 'text-purple-400', glow: 'shadow-purple-500/50' },
+  { id: 'orange', name: 'Orange', bg: 'bg-orange-500', bgSubtle: 'bg-orange-500/20', border: 'border-orange-400', from: 'from-orange-600', to: 'to-orange-900', shadow: 'shadow-orange-500/50', accent: 'text-orange-400', glow: 'shadow-orange-500/50' },
+  { id: 'red', name: 'Crimson', bg: 'bg-red-600', bgSubtle: 'bg-red-600/20', border: 'border-red-400', from: 'from-red-700', to: 'to-red-950', shadow: 'shadow-red-600/50', accent: 'text-red-400', glow: 'shadow-red-600/50' },
+];
+
 export default function App() {
+  const [p1Name, setP1Name] = useState('P1');
+  const [p2Name, setP2Name] = useState('AI');
+  const [p1Color, setP1Color] = useState('cyan');
+  const [p2Color, setP2Color] = useState('amber');
+  const [setupStep, setSetupStep] = useState<'mode' | 'names'>('mode');
+  const [tempMode, setTempMode] = useState<'single' | 'multi' | null>(null);
+
   const [gameState, setGameState] = useState<GameState>({
     pieces: INITIAL_PIECES,
     selectedPieceId: null,
@@ -50,7 +67,9 @@ export default function App() {
     winner: null,
     currentTurn: 'human',
     gameMode: null,
-    gameVariant: null
+    gameVariant: null,
+    playerNames: { human: 'P1', ai: 'AI' },
+    playerColors: { human: 'cyan', ai: 'amber' }
   });
   
   const [freezeUsedThisTurn, setFreezeUsedThisTurn] = useState(false);
@@ -165,7 +184,7 @@ export default function App() {
               magicCharges: { ...prev.magicCharges, ai: prev.magicCharges.ai - 1 }
             }));
             setFreezeUsedThisTurn(true);
-            addLog(`AI activated STASIS field on ${String.fromCharCode(65 + target.col)}${BOARD_SIZE - target.row}.`, 'ai');
+            addLog(`${gameState.playerNames.ai} activated STASIS field on ${String.fromCharCode(65 + target.col)}${BOARD_SIZE - target.row}.`, 'ai');
             return;
           }
         }
@@ -181,15 +200,32 @@ export default function App() {
   }, [gameState.pieces, gameState.winner, gameState.currentTurn, gameState.gameMode, gameState.gameVariant, freezeUsedThisTurn, gameState.magicMode, gameState.magicCharges.ai]);
 
   // Tactical Log State
-  const [logs, setLogs] = useState<{ id: string, msg: string, time: string, type: 'human' | 'ai' | 'system' }[]>([]);
+  const [logs, setLogs] = useState<{ human: any[], ai: any[] }>({ human: [], ai: [] });
 
   const addLog = (msg: string, type: 'human' | 'ai' | 'system') => {
     const time = new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setLogs(prev => [{ id: Math.random().toString(36).substr(2, 9), msg, time, type }, ...prev].slice(0, 8));
+    const entry = { id: Math.random().toString(36).substr(2, 9), msg, time, type };
+    setLogs(prev => {
+      // In multi-player, we log to respective matrices. In single, maybe AI feed shows all.
+      // Actually, let's just push to both for system, and specific ones for players if we want "separation"
+      // or just push EVERYTHING to both but keep the containers separate.
+      // Re-reading: "separate aetheric matrix". I'll push EVERYTHING to both but labeled.
+      const newHuman = [entry, ...prev.human].slice(0, 10);
+      const newAi = [entry, ...prev.ai].slice(0, 10);
+      return { human: newHuman, ai: newAi };
+    });
   };
 
   const handleMove = (player: Player, move: Move) => {
     setFreezeUsedThisTurn(false);
+
+    // Side effects like logging should happen outside the state updater
+    const pos = `${String.fromCharCode(65 + move.to.col)}${BOARD_SIZE - move.to.row}`;
+    addLog(`${player === 'human' ? gameState.playerNames.human : gameState.playerNames.ai} moved to ${pos}`, player);
+    if (move.capturedPieceIds && move.capturedPieceIds.length > 0) {
+      addLog(`${player === 'human' ? gameState.playerNames.human : gameState.playerNames.ai} secured ${move.capturedPieceIds.length} Core(s)`, 'system');
+    }
+
     setGameState(prev => {
       const oppositePlayer = player === 'human' ? 'ai' : 'human';
       const activePiece = prev.pieces.find(pc => pc.row === move.from.row && pc.col === move.from.col);
@@ -224,9 +260,6 @@ export default function App() {
         return { ...p, cooldownTurns, isFrozen: pIsFrozen };
       }).filter(p => !move.capturedPieceIds?.includes(p.id));
 
-      const pos = `${String.fromCharCode(65 + move.to.col)}${BOARD_SIZE - move.to.row}`;
-      addLog(`${player === 'human' ? 'P1' : (prev.gameMode === 'single' ? 'AI' : 'P2')} moved to ${pos}`, player);
-
       const humanPieces = nextPieces.filter(p => p.player === 'human');
       const aiPieces = nextPieces.filter(p => p.player === 'ai');
       let winner = prev.winner;
@@ -241,7 +274,6 @@ export default function App() {
       let magicCharges = { ...prev.magicCharges };
       if (move.capturedPieceIds && move.capturedPieceIds.length > 0) {
         magicCharges[player] += move.capturedPieceIds.length;
-        addLog(`${player === 'human' ? 'P1' : 'P2'} secured ${move.capturedPieceIds.length} Core(s)`, 'system');
       }
 
       return {
@@ -299,16 +331,50 @@ export default function App() {
   };
 
   const selectMode = (mode: 'single' | 'multi') => {
-    setGameState(prev => ({ ...prev, gameMode: mode, winner: null, pieces: INITIAL_PIECES, currentTurn: 'human' }));
+    setTempMode(mode);
+    setSetupStep('names');
+    if (mode === 'single') {
+      setP1Name('P1');
+      setP2Name('AI');
+      setP1Color('cyan');
+      setP2Color('red');
+    } else {
+      setP1Name('PLAYER 1');
+      setP2Name('PLAYER 2');
+      setP1Color('cyan');
+      setP2Color('amber');
+    }
+  };
+
+  const confirmNames = () => {
+    if (!tempMode) return;
+    setGameState(prev => ({ 
+      ...prev, 
+      gameMode: tempMode, 
+      winner: null, 
+      pieces: INITIAL_PIECES, 
+      currentTurn: 'human',
+      playerNames: { 
+        human: p1Name || 'P1', 
+        ai: tempMode === 'single' ? (p2Name || 'AI') : (p2Name || 'P2') 
+      },
+      playerColors: {
+        human: p1Color,
+        ai: p2Color
+      }
+    }));
   };
 
   const selectVariant = (variant: 'classic' | 'bishop' | 'chain' | 'vortex') => {
     setGameState(prev => ({ ...prev, gameVariant: variant }));
-    setLogs([{ id: 'init', msg: `Initializing ${variant.toUpperCase()} combat protocol`, time: new Date().toLocaleTimeString([], { hour12: false }), type: 'system' }]);
+    const entry = { id: 'init', msg: `Initializing ${variant.toUpperCase()} combat protocol`, time: new Date().toLocaleTimeString([], { hour12: false }), type: 'system' as const };
+    setLogs({ human: [entry], ai: [entry] });
   };
 
   const resetToMenu = () => {
     setGameState(prev => ({ ...prev, gameMode: null, gameVariant: null, winner: null, pieces: INITIAL_PIECES }));
+    setSetupStep('mode');
+    setTempMode(null);
     setFreezeUsedThisTurn(false);
   };
 
@@ -327,7 +393,13 @@ export default function App() {
 
   const humanCount = gameState.pieces.filter(p => p.player === 'human').length;
   const aiCount = gameState.pieces.filter(p => p.player === 'ai').length;
-  const essencePercent = Math.round((humanCount / 12) * 100);
+  const p1HealthPercent = Math.round((humanCount / 12) * 100);
+  const p2HealthPercent = Math.round((aiCount / 12) * 100);
+  const p1EssencePercent = Math.round((gameState.magicCharges.human / 5) * 100);
+  const p2EssencePercent = Math.round((gameState.magicCharges.ai / 5) * 100);
+
+  const p1ColorConfig = COLOR_OPTIONS.find(c => c.id === gameState.playerColors.human) || COLOR_OPTIONS[0];
+  const p2ColorConfig = COLOR_OPTIONS.find(c => c.id === gameState.playerColors.ai) || COLOR_OPTIONS[1];
 
   return (
     <div className="h-screen w-full bg-[#06080c] text-slate-200 font-sans overflow-hidden flex flex-col">
@@ -346,40 +418,127 @@ export default function App() {
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   transition={{ delay: 0.2 }}
-                  className="w-20 h-20 bg-cyan-500/10 border border-cyan-500/20 rounded-[2rem] mx-auto mb-6 flex items-center justify-center shadow-[0_0_50px_rgba(34,211,238,0.1)]"
+                  className="w-16 h-16 bg-white/5 border border-white/10 rounded-2xl mx-auto mb-6 flex items-center justify-center"
                 >
-                  <Sparkles className="w-10 h-10 text-cyan-400" />
+                  <Circle className="w-8 h-8 text-white/20" />
                 </motion.div>
                 <h1 className="text-4xl font-black italic uppercase tracking-[0.2em] text-white mb-2 drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]">Chronos Checkers</h1>
-                <p className="text-slate-500 uppercase tracking-widest text-[10px] font-bold">Select Combat Protocol</p>
+                <p className="text-slate-500 uppercase tracking-widest text-[10px] font-bold">
+                  {setupStep === 'mode' ? 'Select Combat Protocol' : 'Identity Verification'}
+                </p>
               </div>
 
-              <div className="grid gap-4">
-                <button 
-                  onClick={() => selectMode('single')}
-                  className="group relative p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-cyan-500/10 hover:border-cyan-500/40 transition-all duration-300 overflow-hidden"
-                >
-                  <div className="relative z-10 text-left">
-                    <h3 className="text-xl font-bold uppercase tracking-tight text-white group-hover:text-cyan-400 transition-colors">Single Player</h3>
-                    <p className="text-xs text-slate-500 group-hover:text-slate-300">Challenge the Hyperion Core Engine</p>
-                  </div>
-                  <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all group-hover:translate-x-2">
-                    <Zap className="w-8 h-8 text-cyan-400" />
-                  </div>
-                </button>
+              <div className="space-y-6">
+                {setupStep === 'mode' ? (
+                  <div className="grid gap-4">
+                    <button 
+                      onClick={() => selectMode('single')}
+                      className="group relative p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-cyan-500/10 hover:border-cyan-500/40 transition-all duration-300 overflow-hidden text-left"
+                    >
+                      <div className="relative z-10 text-left">
+                        <h3 className="text-xl font-bold uppercase tracking-tight text-white group-hover:text-cyan-400 transition-colors">Single Player</h3>
+                        <p className="text-xs text-slate-500 group-hover:text-slate-300">Challenge the Hyperion Core Engine</p>
+                      </div>
+                      <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all group-hover:translate-x-2">
+                        <Zap className="w-8 h-8 text-cyan-400" />
+                      </div>
+                    </button>
 
-                <button 
-                  onClick={() => selectMode('multi')}
-                  className="group relative p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-amber-500/10 hover:border-amber-500/40 transition-all duration-300 overflow-hidden"
-                >
-                  <div className="relative z-10 text-left">
-                    <h3 className="text-xl font-bold uppercase tracking-tight text-white group-hover:text-amber-400 transition-colors">2 Players</h3>
-                    <p className="text-xs text-slate-500 group-hover:text-slate-300">Local temporal combat vs an ally</p>
+                    <button 
+                      onClick={() => selectMode('multi')}
+                      className="group relative p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-amber-500/10 hover:border-amber-500/40 transition-all duration-300 overflow-hidden"
+                    >
+                      <div className="relative z-10 text-left">
+                        <h3 className="text-xl font-bold uppercase tracking-tight text-white group-hover:text-amber-400 transition-colors">Two Players</h3>
+                        <p className="text-xs text-slate-500 group-hover:text-slate-300">Local temporal combat vs an ally</p>
+                      </div>
+                      <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all group-hover:translate-x-2">
+                        <RotateCcw className="w-8 h-8 text-amber-400" />
+                      </div>
+                    </button>
                   </div>
-                  <div className="absolute right-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all group-hover:translate-x-2">
-                    <RotateCcw className="w-8 h-8 text-amber-400" />
+                ) : (
+                  <div className="space-y-6">
+                    <div className="grid gap-4">
+                      <div className="text-left">
+                        <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest ml-4 mb-2 block">
+                          {tempMode === 'single' ? 'Enter User Identity' : 'Player 1 Identity'}
+                        </label>
+                        <input 
+                          type="text" 
+                          value={p1Name}
+                          onChange={(e) => setP1Name(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-cyan-500/50 transition-colors uppercase font-bold tracking-tight text-lg mb-3"
+                        />
+                        <div className="flex gap-2 px-4 mb-6">
+                           {COLOR_OPTIONS.map(c => {
+                             const isLocked = c.id === p2Color;
+                             const isSelected = c.id === p1Color;
+                             return (
+                               <button
+                                 key={c.id}
+                                 disabled={isLocked}
+                                 onClick={() => setP1Color(c.id)}
+                                 className={`w-6 h-6 rounded-full border-2 transition-all relative flex items-center justify-center
+                                   ${isSelected ? 'scale-125 border-white shadow-[0_0_10px_white]' : 'border-transparent'} 
+                                   ${isLocked ? 'opacity-10 cursor-not-allowed' : 'opacity-50 hover:opacity-100 cursor-pointer'} 
+                                   ${c.bg}`}
+                               >
+                                 {isLocked && <div className="text-[8px] font-black text-white/40">X</div>}
+                               </button>
+                             );
+                           })}
+                        </div>
+                      </div>
+
+                      {tempMode === 'multi' && (
+                        <div className="text-left">
+                          <label className="text-[10px] text-slate-500 uppercase font-black tracking-widest ml-4 mb-2 block">Player 2 Identity</label>
+                          <input 
+                            type="text" 
+                            value={p2Name}
+                            onChange={(e) => setP2Name(e.target.value)}
+                            className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white focus:outline-none focus:border-amber-500/50 transition-colors uppercase font-bold tracking-tight text-lg mb-3"
+                          />
+                          <div className="flex gap-2 px-4 mb-4">
+                            {COLOR_OPTIONS.map(c => {
+                              const isLocked = c.id === p1Color;
+                              const isSelected = c.id === p2Color;
+                              return (
+                                <button
+                                  key={c.id}
+                                  disabled={isLocked}
+                                  onClick={() => setP2Color(c.id)}
+                                  className={`w-6 h-6 rounded-full border-2 transition-all relative flex items-center justify-center
+                                    ${isSelected ? 'scale-125 border-white shadow-[0_0_10px_white]' : 'border-transparent'} 
+                                    ${isLocked ? 'opacity-10 cursor-not-allowed' : 'opacity-50 hover:opacity-100 cursor-pointer'} 
+                                    ${c.bg}`}
+                                >
+                                  {isLocked && <div className="text-[8px] font-black text-white/40">X</div>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex gap-4">
+                      <button 
+                        onClick={() => setSetupStep('mode')}
+                        className="flex-1 p-4 bg-white/5 border border-white/10 rounded-2xl text-slate-400 font-bold uppercase tracking-widest text-xs hover:bg-white/10 transition-colors"
+                      >
+                        Back
+                      </button>
+                      <button 
+                        onClick={confirmNames}
+                        className="flex-[2] p-4 bg-cyan-500/20 border border-cyan-500/40 rounded-2xl text-cyan-400 font-bold uppercase tracking-widest text-xs hover:bg-cyan-500/30 transition-colors shadow-[0_0_20px_rgba(34,211,238,0.1)]"
+                      >
+                        Confirm Sync
+                      </button>
+                    </div>
                   </div>
-                </button>
+                )}
               </div>
             </div>
           </motion.div>
@@ -473,16 +632,16 @@ export default function App() {
       {/* Header Section */}
       <header className="h-20 border-b border-white/5 bg-black/40 backdrop-blur-md px-10 flex justify-between items-center shrink-0">
         <div className="flex flex-col cursor-pointer" onClick={resetToMenu}>
-          <h1 className="text-2xl font-black tracking-[0.2em] text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)] uppercase italic">Chronos Checkers</h1>
-          <span className="text-[10px] text-slate-500 tracking-[0.3em] font-bold uppercase flex gap-2">
-            Advanced Aetheric Combat Engine • <span className="text-white/40">{gameState.gameMode === 'single' ? 'SOLO' : 'VERSUS'}</span>
+          <h1 className="text-2xl font-black tracking-[0.1em] text-white uppercase italic">Chronos Checkers</h1>
+          <span className="text-[10px] text-slate-500 tracking-[0.2em] font-bold uppercase">
+             {gameState.gameMode === 'single' ? 'SOLO PROTOCOL' : 'VERSUS LINK'}
           </span>
         </div>
         <div className="flex gap-12">
           <div className="text-right">
             <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Current Phase</p>
-            <p className={`text-sm font-mono tracking-tighter ${gameState.currentTurn === 'human' ? 'text-cyan-300' : 'text-amber-300 animate-pulse'}`}>
-              {gameState.magicMode ? 'SURGE STATE' : gameState.currentTurn === 'human' ? 'P1_READY' : (gameState.gameMode === 'single' ? 'AI_THINK' : 'P2_READY')}
+            <p className={`text-sm font-mono tracking-tighter ${gameState.currentTurn === 'human' ? COLOR_OPTIONS.find(c => c.id === gameState.playerColors.human)?.accent : COLOR_OPTIONS.find(c => c.id === gameState.playerColors.ai)?.accent + ' animate-pulse'}`}>
+              {gameState.magicMode ? 'SURGE STATE' : gameState.currentTurn === 'human' ? `${gameState.playerNames.human.toUpperCase()}_READY` : `${gameState.playerNames.ai.toUpperCase()}_READY`}
             </p>
           </div>
           <div className="w-px h-10 bg-white/10"></div>
@@ -494,77 +653,105 @@ export default function App() {
       </header>
 
       <main className="flex-1 flex p-8 gap-8 overflow-hidden">
-        {/* Sidebar Left: Magic & Player Stats */}
+        {/* Sidebar Left: Nexus P1 */}
         <aside className="w-64 flex flex-col gap-6 shrink-0">
-          <div className="p-5 bg-gradient-to-br from-cyan-950/40 to-transparent border border-cyan-500/20 rounded-2xl shadow-xl shadow-cyan-500/5">
-            <h2 className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-4 flex items-center gap-2">
-               Vortex Sanctum (P1)
+          {/* Status Panel */}
+          <div className={`p-5 bg-gradient-to-br from-black/40 to-transparent border ${p1ColorConfig.border}/20 rounded-2xl shadow-xl ${p1ColorConfig.glow}/5`}>
+            <h2 className={`text-xs font-bold ${p1ColorConfig.accent} uppercase tracking-widest mb-4 flex items-center gap-2`}>
+               {gameState.playerNames.human} NEXUS
             </h2>
-            <div className="space-y-4">
-              <div className="relative h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
-                <motion.div 
-                  initial={{ width: '100%' }}
-                  animate={{ width: `${essencePercent}%` }}
-                  className="absolute left-0 top-0 h-full bg-cyan-500 shadow-[0_0_10px_rgba(6,182,212,0.8)]" 
-                />
+            <div className="space-y-5">
+              {/* Vitality (Health) */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5 grayscale opacity-50">
+                  <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Vitality Scan</span>
+                  <span className={`text-[10px] font-mono ${p1ColorConfig.accent}`}>{humanCount}/12</span>
+                </div>
+                <div className="relative h-1.5 w-full bg-slate-800/50 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${p1HealthPercent}%` }}
+                    className={`absolute left-0 top-0 h-full ${p1ColorConfig.bg} ${p1ColorConfig.glow}`} 
+                  />
+                </div>
               </div>
-              <div className="flex justify-between items-end">
-                <span className="text-[10px] text-slate-400 uppercase font-mono">Essence Gauge</span>
-                <span className="text-xl font-black text-white">{essencePercent}%</span>
+
+              {/* Essence (Charges) */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Essence Level</span>
+                  <span className={`text-[10px] font-mono ${p1ColorConfig.accent}`}>{p1EssencePercent}%</span>
+                </div>
+                <div className="flex gap-1.5">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className={`h-2.5 flex-1 rounded-full border transition-all duration-500 ${
+                      i < gameState.magicCharges.human 
+                      ? `${p1ColorConfig.bg} ${p1ColorConfig.border} ${p1ColorConfig.glow}/40` 
+                      : 'bg-slate-900 border-white/5'
+                    }`} />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="flex-1 p-5 bg-black/40 border border-white/5 rounded-2xl flex flex-col shadow-inner">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 border-b border-white/5 pb-2">Aetheric Matrix</h2>
+          <div className="flex-1 p-5 bg-black/40 border border-white/5 rounded-2xl flex flex-col shadow-inner overflow-hidden">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">Aetheric Matrix</h2>
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4 font-mono scrollbar-hide mb-4">
+              <AnimatePresence initial={false}>
+                {logs.human.map((log) => (
+                  <motion.div 
+                    key={log.id}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="text-[9px] flex gap-2"
+                  >
+                    <span className="text-slate-700 shrink-0">{log.time}</span>
+                    <p className={`${
+                      log.type === 'human' ? p1ColorConfig.accent : 
+                      log.type === 'ai' ? 'text-slate-500' : 
+                      'text-white/60 italic font-bold'
+                    }`}>
+                      {log.msg}
+                    </p>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+            
             <div className="space-y-4">
               <button 
                 onClick={toggleMagicMode}
-                disabled={freezeUsedThisTurn || (gameState.currentTurn === 'human' ? gameState.magicCharges.human : gameState.magicCharges.ai) === 0}
+                disabled={gameState.currentTurn !== 'human' || gameState.magicCharges.human === 0 || freezeUsedThisTurn}
                 className={`w-full p-3 rounded-xl relative overflow-hidden group transition-all duration-500 border text-left ${
-                  gameState.magicMode 
-                    ? 'bg-cyan-500/10 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.2)]' 
-                    : (gameState.currentTurn === 'human' ? gameState.magicCharges.human : gameState.magicCharges.ai) > 0 && !freezeUsedThisTurn
-                      ? 'bg-cyan-500/5 border-cyan-500/30 hover:border-cyan-400 cursor-pointer'
+                  gameState.currentTurn === 'human' && gameState.magicMode 
+                    ? `${p1ColorConfig.bgSubtle} ${p1ColorConfig.border} shadow-[0_0_15px_rgba(0,0,0,0.2)]` 
+                    : (gameState.currentTurn === 'human' && gameState.magicCharges.human > 0 && !freezeUsedThisTurn)
+                      ? `bg-white/5 border-white/10 hover:${p1ColorConfig.border} cursor-pointer`
                       : 'bg-slate-900/50 border-white/5 opacity-50 cursor-not-allowed'
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
-                    gameState.magicMode || (gameState.currentTurn === 'human' ? gameState.magicCharges.human : gameState.magicCharges.ai) > 0 ? 'bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.5)]' : 'bg-slate-800'
+                    gameState.currentTurn === 'human' && (gameState.magicMode || gameState.magicCharges.human > 0) ? `${p1ColorConfig.bg} text-black` : 'bg-slate-800 text-slate-500'
                   }`}>
-                    <Zap className={`w-5 h-5 ${gameState.magicMode || (gameState.currentTurn === 'human' ? gameState.magicCharges.human : gameState.magicCharges.ai) > 0 ? 'text-black' : 'text-slate-500'}`} />
+                    <Zap className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className={`text-xs font-bold uppercase ${gameState.magicMode || (gameState.currentTurn === 'human' ? gameState.magicCharges.human : gameState.magicCharges.ai) > 0 ? 'text-white' : 'text-slate-500'}`}>Aether Freeze</p>
-                    <p className={`text-[9px] font-mono uppercase ${gameState.magicMode ? 'text-cyan-400 animate-pulse' : 'text-slate-600'}`}>
-                      {gameState.magicMode ? 'SELECT TARGET' : `${gameState.currentTurn === 'human' ? gameState.magicCharges.human : gameState.magicCharges.ai} CHARGE(S)`}
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white">Aether Freeze</p>
+                    <p className={`text-[8px] font-mono ${p1ColorConfig.accent}/60 uppercase`}>
+                      {gameState.currentTurn === 'human' && gameState.magicMode ? 'Target Piece' : `${gameState.magicCharges.human} Energy Available`}
                     </p>
                   </div>
                 </div>
               </button>
-              
-              <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-2">
-                <div className="flex justify-between items-center">
-                   <span className="text-[10px] text-slate-500 uppercase font-bold">P1 Units</span>
-                   <span className="text-xs font-mono text-cyan-400">{humanCount}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                   <span className="text-[10px] text-slate-500 uppercase font-bold">{gameState.gameMode === 'single' ? 'AI Units' : 'P2 Units'}</span>
-                   <span className={`text-xs font-mono ${gameState.gameMode === 'single' ? 'text-red-500' : 'text-amber-500'}`}>{aiCount}</span>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-auto pt-6 border-t border-white/5">
-              <div className="flex flex-col gap-2">
-                <button 
-                  onClick={resetToMenu}
-                  className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] uppercase tracking-[0.2em] font-black hover:bg-white/10 transition-colors"
-                >
-                  Exit Strategy
-                </button>
-              </div>
+
+              <button 
+                onClick={resetToMenu}
+                className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] uppercase tracking-[0.2em] font-black hover:bg-white/10 transition-colors"
+              >
+                Exit Strategy
+              </button>
             </div>
           </div>
         </aside>
@@ -585,35 +772,38 @@ export default function App() {
                 const activePiece = gameState.selectedPieceId ? gameState.pieces.find(p => p.id === gameState.selectedPieceId) : null;
                 const canMoveHere = activePiece && !piece && isDark && getValidMoves(activePiece, gameState.pieces, gameState.gameVariant || 'classic').some(m => m.to.row === r && m.to.col === c);
 
+                const activeColorConfig = activePiece?.player === 'human' ? p1ColorConfig : p2ColorConfig;
+
                 return (
                   <div
                     key={i}
                     onClick={() => handleSquareClick(r, c)}
                     className={`relative flex items-center justify-center cursor-pointer transition-colors duration-500 ${
                       isDark ? 'bg-[#111318]' : 'bg-[#2a2d35]'
-                    } ${canMoveHere ? 'after:content-[""] after:w-3 after:h-3 after:rounded-full after:bg-cyan-400/40 after:shadow-[0_0_8px_rgba(34,211,238,0.5)]' : ''}`}
+                    }`}
                   >
+                    {canMoveHere && (
+                      <div className={`absolute w-3 h-3 rounded-full opacity-40 animate-pulse ${activeColorConfig.bg} ${activeColorConfig.shadow}`} />
+                    )}
                     {piece && (
                       <motion.div
                         layoutId={piece.id}
                         className={`relative w-[80%] h-[80%] rounded-full shadow-2xl flex items-center justify-center 
                           ${piece.player === 'human' 
-                            ? 'bg-gradient-to-br from-cyan-600 to-blue-900 border-2 border-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.4)]' 
-                            : gameState.gameMode === 'single' 
-                              ? 'bg-gradient-to-br from-red-800 to-black border-2 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)]'
-                              : 'bg-gradient-to-br from-amber-600 to-black border-2 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)]'
+                            ? `bg-gradient-to-br ${p1ColorConfig.from} ${p1ColorConfig.to} border-2 ${p1ColorConfig.border} ${p1ColorConfig.glow}` 
+                            : `bg-gradient-to-br ${p2ColorConfig.from} ${p2ColorConfig.to} border-2 ${p2ColorConfig.border} ${p2ColorConfig.glow}`
                           }
                           ${isSelected ? 'ring-4 ring-white/20 ring-offset-2 ring-offset-black scale-105 z-20' : ''}
                         `}
                       >
                         {piece.isKing && (
-                          <Award className={`w-1/2 h-1/2 ${piece.player === 'human' ? 'text-amber-300/60' : 'text-slate-400/60'}`} />
+                          <Award className={`w-1/2 h-1/2 ${piece.player === 'human' ? 'text-white/60' : 'text-slate-400/60'}`} />
                         )}
 
                         {/* Cooldown Timer Turns */}
                         {piece.cooldownTurns > 0 && (
-                          <div className="absolute -top-1 -right-1 w-6 h-6 bg-slate-950 border border-cyan-400 rounded-full flex items-center justify-center shadow-lg">
-                            <span className="text-[10px] font-mono text-cyan-400 font-bold">
+                          <div className={`absolute -top-1 -right-1 w-6 h-6 bg-slate-950 border ${piece.player === 'human' ? p1ColorConfig.border : p2ColorConfig.border} rounded-full flex items-center justify-center shadow-lg`}>
+                            <span className={`text-[10px] font-mono ${piece.player === 'human' ? p1ColorConfig.accent : p2ColorConfig.accent} font-bold`}>
                               {piece.cooldownTurns}
                             </span>
                           </div>
@@ -621,7 +811,7 @@ export default function App() {
 
                         {/* Frozen Layer */}
                         {piece.isFrozen && (
-                          <div className="absolute inset-0 rounded-full bg-cyan-400/20 backdrop-blur-[1.5px] border-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] flex items-center justify-center">
+                          <div className={`absolute inset-0 rounded-full bg-cyan-400/20 backdrop-blur-[1.5px] border-2 border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] flex items-center justify-center`}>
                             <Snowflake className="text-cyan-200 w-1/2 h-1/2 animate-pulse" />
                           </div>
                         )}
@@ -641,10 +831,10 @@ export default function App() {
                 animate={{ opacity: 1 }}
                 className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-12"
               >
-                <div className={`w-full max-w-sm p-8 rounded-3xl border-2 text-center shadow-2xl ${
-                  gameState.winner === 'human' ? 'bg-cyan-950/80 border-cyan-500 shadow-cyan-500/20' : 
-                  gameState.winner === 'draw' ? 'bg-slate-900/80 border-slate-500 shadow-slate-500/20' :
-                  'bg-red-950/80 border-red-500 shadow-red-500/20'
+                <div className={`w-full max-w-sm p-8 rounded-3xl border-2 text-center shadow-2xl bg-[#06080c]/95 ${
+                  gameState.winner === 'human' ? `${p1ColorConfig.border} ${p1ColorConfig.glow}/20` : 
+                  gameState.winner === 'draw' ? 'border-slate-500 shadow-slate-500/20' :
+                  `${p2ColorConfig.border} ${p2ColorConfig.glow}/20`
                 }`}>
                   <h2 className="text-4xl font-black italic uppercase tracking-tighter mb-2 italic">
                     {gameState.winner === 'draw' ? 'DRAW' : gameState.winner === 'human' ? 'VICTORY' : 'DEFEAT'}
@@ -652,8 +842,7 @@ export default function App() {
                   <p className="text-[10px] text-slate-400 uppercase tracking-widest font-mono mb-8 italic">
                     Combat Protocol Concluded • {
                       gameState.winner === 'draw' ? 'STALEMATE DETECTED' :
-                      gameState.gameMode === 'multi' ? (gameState.winner === 'human' ? 'P1 WINS' : 'P2 WINS') : 
-                      (gameState.winner === 'human' ? 'AI DOMINATED' : 'AI VICTORY')
+                      gameState.winner === 'human' ? `${gameState.playerNames.human.toUpperCase()} DOMINANT` : `${gameState.playerNames.ai.toUpperCase()} DOMINANT`
                     }
                   </p>
                   <div className="grid gap-2">
@@ -676,45 +865,67 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        {/* Sidebar Right: AI Status & Move Feed */}
+        {/* Sidebar Right: Nexus P2 / AI */}
         <aside className="w-64 flex flex-col gap-6 shrink-0">
-          <div className={`p-5 bg-gradient-to-br border rounded-2xl shadow-xl ${
-            gameState.gameMode === 'single' 
-              ? 'from-red-950/30 border-red-500/20 shadow-red-500/5' 
-              : 'from-amber-950/30 border-amber-500/20 shadow-amber-500/5'
-          }`}>
-            <div className="flex justify-between items-start mb-4">
-              <h2 className={`text-xs font-bold uppercase tracking-widest ${gameState.gameMode === 'single' ? 'text-red-500' : 'text-amber-500'}`}>
-                {gameState.gameMode === 'single' ? 'AI Engine' : 'Opponent'}
-              </h2>
-              <span className={`text-[9px] px-2 py-0.5 rounded font-black tracking-tighter text-white ${
-                gameState.gameMode === 'single' ? 'bg-red-500' : 'bg-amber-500'
-              }`}>
-                {gameState.gameMode === 'single' ? 'DEEP_THINK' : 'HUMAN_INPUT'}
-              </span>
+          {/* Status Panel */}
+          <div className={`p-5 bg-gradient-to-br from-black/40 to-transparent border ${p2ColorConfig.border}/20 rounded-2xl shadow-xl ${p2ColorConfig.glow}/5`}>
+            <h2 className={`text-xs font-bold uppercase tracking-widest mb-4 flex items-center justify-between ${p2ColorConfig.accent}`}>
+               <span>{gameState.playerNames.ai} NEXUS</span>
+               <span className="text-[8px] px-1.5 py-0.5 rounded-sm bg-white/5 border border-white/10 opacity-70 font-black">
+                 {gameState.gameMode === 'single' ? 'AI_CORE' : 'P2_LINK'}
+               </span>
+            </h2>
+            <div className="space-y-5">
+              {/* Vitality (Health) */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5 grayscale opacity-50">
+                  <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Vitality Scan</span>
+                  <span className={`text-[10px] font-mono ${p2ColorConfig.accent}`}>{aiCount}/12</span>
+                </div>
+                <div className="relative h-1.5 w-full bg-slate-800/50 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${p2HealthPercent}%` }}
+                    className={`absolute left-0 top-0 h-full ${p2ColorConfig.bg} ${p2ColorConfig.glow}`}
+                  />
+                </div>
+              </div>
+
+              {/* Essence (Charges) */}
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-[9px] text-slate-400 uppercase font-black tracking-widest">Essence Level</span>
+                  <span className={`text-[10px] font-mono ${p2ColorConfig.accent}`}>{p2EssencePercent}%</span>
+                </div>
+                <div className="flex gap-1.5">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className={`h-2.5 flex-1 rounded-full border transition-all duration-500 ${
+                      i < gameState.magicCharges.ai 
+                      ? `${p2ColorConfig.bg} ${p2ColorConfig.border} ${p2ColorConfig.glow}/40` 
+                      : 'bg-slate-900 border-white/5'
+                    }`} />
+                  ))}
+                </div>
+              </div>
             </div>
-            <p className="text-sm text-white font-mono mb-1">{gameState.gameMode === 'single' ? 'Hyperion 7.0' : 'Player 2 Core'}</p>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest">
-              Status: {gameState.currentTurn === 'ai' ? 'CALCULATING' : 'AWAITING_MANEUVER'}
-            </p>
           </div>
 
-          <div className="flex-1 p-5 bg-black/40 border border-white/5 rounded-2xl flex flex-col overflow-hidden shadow-inner">
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">Tactical Feed</h2>
-            <div className="flex-1 overflow-y-auto pr-2 space-y-4 font-mono scrollbar-hide">
+          <div className="flex-1 p-5 bg-black/40 border border-white/5 rounded-2xl flex flex-col shadow-inner overflow-hidden">
+            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 border-b border-white/5 pb-2">Aetheric Matrix</h2>
+            <div className="flex-1 overflow-y-auto pr-1 space-y-4 font-mono scrollbar-hide mb-4">
               <AnimatePresence initial={false}>
-                {logs.map((log) => (
+                {logs.ai.map((log) => (
                   <motion.div 
                     key={log.id}
                     initial={{ opacity: 0, x: 10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="text-[10px] flex gap-3 group"
+                    className="text-[9px] flex gap-2"
                   >
-                    <span className="text-slate-600 shrink-0">{log.time}</span>
-                    <p className={`leading-snug ${
-                      log.type === 'human' ? 'text-slate-300' : 
-                      log.type === 'ai' ? 'text-amber-400' : 
-                      'text-cyan-400 italic font-bold'
+                    <span className="text-slate-700 shrink-0">{log.time}</span>
+                    <p className={`${
+                      log.type === 'ai' ? p2ColorConfig.accent : 
+                      log.type === 'human' ? 'text-slate-500' : 
+                      'text-white/60 italic font-bold'
                     }`}>
                       {log.msg}
                     </p>
@@ -723,12 +934,45 @@ export default function App() {
               </AnimatePresence>
             </div>
             
-            <button 
-              onClick={resetGame}
-              className="mt-6 w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] uppercase tracking-[0.2em] font-black hover:bg-white/10 transition-colors"
-            >
-              Reset Session
-            </button>
+            {gameState.gameMode === 'multi' && (
+              <button 
+                onClick={toggleMagicMode}
+                disabled={gameState.currentTurn !== 'ai' || gameState.magicCharges.ai === 0 || freezeUsedThisTurn}
+                className={`w-full p-3 rounded-xl relative overflow-hidden group transition-all duration-500 border text-left ${
+                  gameState.currentTurn === 'ai' && gameState.magicMode 
+                    ? `${p2ColorConfig.bgSubtle} ${p2ColorConfig.border} shadow-[0_0_15px_rgba(0,0,0,0.2)]` 
+                    : (gameState.currentTurn === 'ai' && gameState.magicCharges.ai > 0 && !freezeUsedThisTurn)
+                      ? `bg-white/5 border-white/10 hover:${p2ColorConfig.border} cursor-pointer`
+                      : 'bg-slate-900/50 border-white/5 opacity-50 cursor-not-allowed'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${
+                    gameState.currentTurn === 'ai' && (gameState.magicMode || gameState.magicCharges.ai > 0) ? `${p2ColorConfig.bg} text-black` : 'bg-slate-800 text-slate-500'
+                  }`}>
+                    <Zap className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-white">Aether Freeze</p>
+                    <p className={`text-[8px] font-mono ${p2ColorConfig.accent}/60 uppercase`}>
+                      {gameState.currentTurn === 'ai' && gameState.magicMode ? 'Target Piece' : `${gameState.magicCharges.ai} Energy Available`}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            )}
+
+            {gameState.gameMode === 'single' && (
+              <div className={`p-4 ${p2ColorConfig.bgSubtle} border ${p2ColorConfig.border}/20 rounded-xl`}>
+                 <p className="text-[9px] text-slate-500 uppercase font-black mb-1">Status Protocol</p>
+                 <p className="text-xs font-mono text-white tracking-widest">{gameState.currentTurn === 'ai' ? 'PROCESSING...' : 'STANDBY'}</p>
+                 <div className="mt-3 flex gap-1">
+                   {[...Array(3)].map((_, i) => (
+                     <div key={i} className={`h-1 flex-1 rounded-full ${gameState.currentTurn === 'ai' ? p2ColorConfig.bg + ' animate-pulse' : 'bg-slate-800'}`} />
+                   ))}
+                 </div>
+              </div>
+            )}
           </div>
         </aside>
       </main>

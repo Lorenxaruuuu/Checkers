@@ -21,6 +21,8 @@ export interface GameState {
   currentTurn: Player;
   gameMode: GameMode;
   gameVariant: GameVariant;
+  playerNames: { human: string, ai: string };
+  playerColors: { human: string, ai: string };
 }
 
 export const BOARD_SIZE = 8;
