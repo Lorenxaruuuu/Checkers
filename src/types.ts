@@ -23,6 +23,11 @@ export interface GameState {
   gameVariant: GameVariant;
   playerNames: { human: string, ai: string };
   playerColors: { human: string, ai: string };
+  matchSettings: {
+    bestOf: number;
+    p1Score: number;
+    p2Score: number;
+  };
 }
 
 export const BOARD_SIZE = 8;

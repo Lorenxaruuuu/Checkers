@@ -56,7 +56,7 @@ export default function App() {
   const [p2Name, setP2Name] = useState('AI');
   const [p1Color, setP1Color] = useState('cyan');
   const [p2Color, setP2Color] = useState('amber');
-  const [setupStep, setSetupStep] = useState<'mode' | 'names'>('mode');
+  const [setupStep, setSetupStep] = useState<'mode' | 'names' | 'match'>('mode');
   const [tempMode, setTempMode] = useState<'single' | 'multi' | null>(null);
 
   const [gameState, setGameState] = useState<GameState>({
@@ -69,7 +69,12 @@ export default function App() {
     gameMode: null,
     gameVariant: null,
     playerNames: { human: 'P1', ai: 'AI' },
-    playerColors: { human: 'cyan', ai: 'amber' }
+    playerColors: { human: 'cyan', ai: 'amber' },
+    matchSettings: {
+      bestOf: 1,
+      p1Score: 0,
+      p2Score: 0
+    }
   });
   
   const [freezeUsedThisTurn, setFreezeUsedThisTurn] = useState(false);
@@ -109,25 +114,35 @@ export default function App() {
     if (gameState.winner || !gameState.gameMode) return;
 
     const currentPlayer = gameState.currentTurn;
-    const playerPieces = gameState.pieces.filter(p => p.player === currentPlayer);
-    const opponentPlayer = currentPlayer === 'human' ? 'ai' : 'human';
-    const opponentPieces = gameState.pieces.filter(p => p.player === opponentPlayer);
-    
-    // Win detection
-    if (playerPieces.length === 0) {
-      setGameState(prev => ({ ...prev, winner: opponentPlayer }));
-      return;
-    }
-    if (opponentPieces.length === 0) {
-      setGameState(prev => ({ ...prev, winner: currentPlayer }));
-      return;
-    }
-
-    // Draw check: 1 human King and 1 ai King remaining
     const humanPieces = gameState.pieces.filter(p => p.player === 'human');
     const aiPieces = gameState.pieces.filter(p => p.player === 'ai');
-    if (humanPieces.length === 1 && aiPieces.length === 1 && humanPieces[0].isKing && aiPieces[0].isKing) {
-      setGameState(prev => ({ ...prev, winner: 'draw' }));
+    const playerPieces = gameState.currentTurn === 'human' ? humanPieces : aiPieces;
+    const opponentPlayer = currentPlayer === 'human' ? 'ai' : 'human';
+    const opponentPieces = gameState.currentTurn === 'human' ? aiPieces : humanPieces;
+    
+    // Win detection
+    if (playerPieces.length === 0 || opponentPieces.length === 0 || (humanPieces.length === 1 && aiPieces.length === 1 && humanPieces[0].isKing && aiPieces[0].isKing)) {
+      let winType: Player | 'draw' | null = null;
+      if (playerPieces.length === 0) winType = opponentPlayer;
+      else if (opponentPieces.length === 0) winType = currentPlayer;
+      else if (humanPieces.length === 1 && aiPieces.length === 1 && humanPieces[0].isKing && aiPieces[0].isKing) winType = 'draw';
+
+      if (winType) {
+        setGameState(prev => {
+          const newP1Score = winType === 'human' ? prev.matchSettings.p1Score + 1 : prev.matchSettings.p1Score;
+          const newP2Score = winType === 'ai' ? prev.matchSettings.p2Score + 1 : prev.matchSettings.p2Score;
+          
+          return {
+            ...prev,
+            winner: winType,
+            matchSettings: {
+              ...prev.matchSettings,
+              p1Score: newP1Score,
+              p2Score: newP2Score
+            }
+          };
+        });
+      }
       return;
     }
 
@@ -262,9 +277,19 @@ export default function App() {
 
       const humanPieces = nextPieces.filter(p => p.player === 'human');
       const aiPieces = nextPieces.filter(p => p.player === 'ai');
+
       let winner = prev.winner;
-      if (humanPieces.length === 0) winner = 'ai';
-      if (aiPieces.length === 0) winner = 'human';
+      let newP1Score = prev.matchSettings.p1Score;
+      let newP2Score = prev.matchSettings.p2Score;
+
+      if (humanPieces.length === 0) {
+        winner = 'ai';
+        newP2Score += 1;
+      }
+      if (aiPieces.length === 0) {
+        winner = 'human';
+        newP1Score += 1;
+      }
 
       // Draw check: 1 human King and 1 ai King remaining
       if (humanPieces.length === 1 && aiPieces.length === 1 && humanPieces[0].isKing && aiPieces[0].isKing) {
@@ -283,7 +308,12 @@ export default function App() {
         magicCharges,
         magicMode: false,
         winner,
-        currentTurn: oppositePlayer
+        currentTurn: oppositePlayer,
+        matchSettings: {
+          ...prev.matchSettings,
+          p1Score: newP1Score,
+          p2Score: newP2Score
+        }
       };
     });
   };
@@ -367,12 +397,34 @@ export default function App() {
 
   const selectVariant = (variant: 'classic' | 'bishop' | 'chain' | 'vortex') => {
     setGameState(prev => ({ ...prev, gameVariant: variant }));
-    const entry = { id: 'init', msg: `Initializing ${variant.toUpperCase()} combat protocol`, time: new Date().toLocaleTimeString([], { hour12: false }), type: 'system' as const };
+    setSetupStep('match');
+  };
+
+  const selectBestOf = (count: number) => {
+    setGameState(prev => ({
+      ...prev,
+      matchSettings: {
+        ...prev.matchSettings,
+        bestOf: count,
+        p1Score: 0,
+        p2Score: 0
+      }
+    }));
+    setSetupStep('mode'); // This will be ignored since gameMode is set, but we need to change it from 'match'
+    // Actually let's use a clear indicator that setup is done
+    const entry = { id: 'init', msg: `Initializing ${gameState.gameVariant?.toUpperCase()} combat protocol`, time: new Date().toLocaleTimeString([], { hour12: false }), type: 'system' as const };
     setLogs({ human: [entry], ai: [entry] });
   };
 
   const resetToMenu = () => {
-    setGameState(prev => ({ ...prev, gameMode: null, gameVariant: null, winner: null, pieces: INITIAL_PIECES }));
+    setGameState(prev => ({ 
+      ...prev, 
+      gameMode: null, 
+      gameVariant: null, 
+      winner: null, 
+      pieces: INITIAL_PIECES,
+      matchSettings: { bestOf: 1, p1Score: 0, p2Score: 0 }
+    }));
     setSetupStep('mode');
     setTempMode(null);
     setFreezeUsedThisTurn(false);
@@ -627,6 +679,52 @@ export default function App() {
             </div>
           </motion.div>
         )}
+
+        {gameState.gameMode && gameState.gameVariant && setupStep === 'match' && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-[#06080c] flex items-center justify-center p-6"
+          >
+            <div className="max-w-md w-full space-y-12 text-center">
+              <div>
+                <motion.div 
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="w-16 h-16 bg-white/5 border border-white/10 rounded-2xl mx-auto mb-6 flex items-center justify-center"
+                >
+                  <Award className="w-8 h-8 text-cyan-400" />
+                </motion.div>
+                <h2 className="text-2xl font-black uppercase tracking-[0.2em] text-white mb-2">Match Protocol</h2>
+                <p className="text-slate-500 uppercase tracking-widest text-[10px] font-bold">Series Length Optimization</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                {[1, 3, 5, 7].map((count) => (
+                  <button 
+                    key={count}
+                    onClick={() => selectBestOf(count)}
+                    className="group relative p-6 bg-white/5 border border-white/10 rounded-3xl hover:bg-cyan-500/10 hover:border-cyan-500/40 transition-all duration-300 overflow-hidden"
+                  >
+                    <div className="relative z-10">
+                      <h3 className="text-2xl font-black text-white group-hover:text-cyan-400 transition-colors">BO{count}</h3>
+                      <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Best of {count}</p>
+                      <p className="text-[8px] text-slate-600 mt-2 italic">Needs {Math.floor(count / 2) + 1} Wins</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setSetupStep('names')}
+                className="text-[10px] uppercase tracking-widest text-slate-600 hover:text-slate-400 font-bold"
+              >
+                ← Back to Identity Verification
+              </button>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Header Section */}
@@ -638,6 +736,42 @@ export default function App() {
           </span>
         </div>
         <div className="flex gap-12">
+          {gameState.matchSettings.bestOf > 1 && (
+            <div className="flex items-center gap-6">
+               <div className="text-right">
+                  <p className="text-[10px] text-slate-500 uppercase font-black mb-1">Match Series</p>
+                  <div className="flex gap-1">
+                    {[...Array(gameState.matchSettings.bestOf)].map((_, i) => {
+                      const winsNeeded = Math.floor(gameState.matchSettings.bestOf / 2) + 1;
+                      const isP1Win = i < gameState.matchSettings.p1Score;
+                      // Show P2 wins from the right side
+                      const isP2Win = i >= gameState.matchSettings.bestOf - gameState.matchSettings.p2Score;
+                      
+                      return (
+                        <div key={i} className={`h-1.5 w-4 rounded-full transition-all duration-500 ${
+                          isP1Win ? p1ColorConfig.bg : 
+                          isP2Win ? p2ColorConfig.bg :
+                          'bg-white/10'
+                        }`} />
+                      );
+                    })}
+                  </div>
+               </div>
+               <div className="flex items-center gap-4 bg-white/5 px-4 py-2 rounded-xl border border-white/10">
+                  <div className="text-center">
+                    <p className={`text-[9px] font-black uppercase ${p1ColorConfig.accent}`}>{gameState.playerNames.human.slice(0, 3)}</p>
+                    <p className="text-lg font-black text-white leading-none">{gameState.matchSettings.p1Score}</p>
+                  </div>
+                  <div className="w-px h-6 bg-white/10" />
+                  <div className="text-center">
+                    <p className={`text-[9px] font-black uppercase ${p2ColorConfig.accent}`}>{gameState.playerNames.ai.slice(0, 3)}</p>
+                    <p className="text-lg font-black text-white leading-none">{gameState.matchSettings.p2Score}</p>
+                  </div>
+                  <div className="w-px h-6 bg-white/10" />
+                  <div className="text-[10px] font-mono text-slate-500 font-black">BO{gameState.matchSettings.bestOf}</div>
+               </div>
+            </div>
+          )}
           <div className="text-right">
             <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mb-1">Current Phase</p>
             <p className={`text-sm font-mono tracking-tighter ${gameState.currentTurn === 'human' ? COLOR_OPTIONS.find(c => c.id === gameState.playerColors.human)?.accent : COLOR_OPTIONS.find(c => c.id === gameState.playerColors.ai)?.accent + ' animate-pulse'}`}>
@@ -836,29 +970,54 @@ export default function App() {
                   gameState.winner === 'draw' ? 'border-slate-500 shadow-slate-500/20' :
                   `${p2ColorConfig.border} ${p2ColorConfig.glow}/20`
                 }`}>
-                  <h2 className="text-4xl font-black italic uppercase tracking-tighter mb-2 italic">
-                    {gameState.winner === 'draw' ? 'DRAW' : gameState.winner === 'human' ? 'VICTORY' : 'DEFEAT'}
-                  </h2>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-widest font-mono mb-8 italic">
-                    Combat Protocol Concluded • {
-                      gameState.winner === 'draw' ? 'STALEMATE DETECTED' :
-                      gameState.winner === 'human' ? `${gameState.playerNames.human.toUpperCase()} DOMINANT` : `${gameState.playerNames.ai.toUpperCase()} DOMINANT`
-                    }
-                  </p>
-                  <div className="grid gap-2">
-                    <button 
-                      onClick={resetGame}
-                      className="w-full py-4 bg-white/5 border border-white/20 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-white/10 transition-all hover:scale-[1.02]"
-                    >
-                      Restart Session
-                    </button>
-                    <button 
-                      onClick={resetToMenu}
-                      className="w-full py-4 bg-transparent border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:text-white transition-all"
-                    >
-                      Return to Matrix
-                    </button>
-                  </div>
+                  {(() => {
+                    const winsNeeded = Math.floor(gameState.matchSettings.bestOf / 2) + 1;
+                    const matchOver = gameState.matchSettings.p1Score >= winsNeeded || gameState.matchSettings.p2Score >= winsNeeded;
+                    const matchWinner = gameState.matchSettings.p1Score >= winsNeeded ? 'human' : 'ai';
+                    
+                    return (
+                      <>
+                        <h2 className="text-4xl font-black italic uppercase tracking-tighter mb-2 italic">
+                          {matchOver ? (matchWinner === 'human' ? 'SERIES VICTORY' : 'SERIES DEFEAT') : (gameState.winner === 'draw' ? 'DRAW' : gameState.winner === 'human' ? 'GAME WON' : 'GAME LOST')}
+                        </h2>
+                        
+                        <div className="flex justify-center gap-8 mb-6 py-4 bg-white/5 rounded-2xl border border-white/5">
+                          <div className="text-center">
+                            <p className={`text-[10px] font-black uppercase ${p1ColorConfig.accent}`}>{gameState.playerNames.human}</p>
+                            <p className="text-3xl font-black text-white">{gameState.matchSettings.p1Score}</p>
+                          </div>
+                          <div className="flex items-center text-slate-700 font-black text-xl italic">—</div>
+                          <div className="text-center">
+                            <p className={`text-[10px] font-black uppercase ${p2ColorConfig.accent}`}>{gameState.playerNames.ai}</p>
+                            <p className="text-3xl font-black text-white">{gameState.matchSettings.p2Score}</p>
+                          </div>
+                        </div>
+
+                        <p className="text-[10px] text-slate-400 uppercase tracking-widest font-mono mb-8 italic">
+                          {matchOver ? 'MATCH PROTOCOL COMPLETED' : `BEST OF ${gameState.matchSettings.bestOf} • SERIES IN PROGRESS`}
+                        </p>
+                        
+                        <div className="grid gap-2">
+                          {!matchOver && (
+                            <button 
+                              onClick={resetGame}
+                              className="w-full py-4 bg-gradient-to-r from-cyan-600 to-cyan-400 text-black border-none rounded-xl text-xs font-black uppercase tracking-widest hover:brightness-110 transition-all hover:scale-[1.02]"
+                            >
+                              Next Battle
+                            </button>
+                          )}
+                          <button 
+                            onClick={resetToMenu}
+                            className={`w-full py-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                              matchOver ? 'bg-white/10 text-white' : 'bg-transparent border border-white/10 text-slate-500 hover:text-white'
+                            }`}
+                          >
+                            {matchOver ? 'Finalize Protocol' : 'Abandon Series'}
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </motion.div>
             )}
